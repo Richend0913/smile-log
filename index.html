@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#FFF8E1">
+<title>SmileLog</title>
+<link rel="manifest" href="manifest.json">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #FFF8E1; color: #3E2723;
+  min-height: 100dvh; display: flex; flex-direction: column; align-items: center;
+  overflow-x: hidden;
+}
+
+/* --- HOME --- */
+#home { display: flex; flex-direction: column; align-items: center; width: 100%; padding: 20px; }
+.title { font-size: 36px; font-weight: 800; color: #F57F17; margin-top: 24px; }
+.subtitle { font-size: 15px; color: #795548; margin-top: 4px; }
+
+.streak-box {
+  margin-top: 24px; background: #FFF3E0; border-radius: 20px;
+  padding: 16px 40px; text-align: center;
+}
+.streak-num { font-size: 56px; font-weight: 900; color: #E65100; }
+.streak-label { font-size: 16px; color: #BF360C; font-weight: 600; }
+
+.cal-wrap { margin-top: 24px; width: 100%; max-width: 360px; }
+.cal-month { font-size: 18px; font-weight: 700; color: #5D4037; text-align: center; margin-bottom: 8px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.cal-cell {
+  aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+  font-size: 14px; color: #5D4037; border-radius: 50%;
+}
+.cal-header { font-size: 12px; font-weight: 600; color: #8D6E63; }
+.cal-done { background: #FFD54F; color: #E65100; font-weight: 700; }
+.cal-today { border: 2px solid #FF6F00; }
+
+.btn {
+  margin-top: 32px; background: #FFB300; border: none; border-radius: 30px;
+  padding: 16px 48px; font-size: 20px; font-weight: 700; color: #fff;
+  cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  transition: transform 0.1s;
+}
+.btn:active { transform: scale(0.95); }
+.btn-done { background: #A5D6A7; pointer-events: none; }
+
+/* --- CAMERA --- */
+#camera-screen {
+  display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: #000; z-index: 100; flex-direction: column;
+}
+#camera-screen.active { display: flex; }
+#video-wrap { flex: 1; position: relative; overflow: hidden; }
+#video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+#canvas-overlay {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  pointer-events: none;
+}
+.cam-overlay {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  background: rgba(0,0,0,0.6); padding: 20px 0 50px; text-align: center;
+}
+.cam-title { font-size: 28px; font-weight: 800; color: #FFD54F; }
+.smile-pct { font-size: 64px; font-weight: 900; color: #fff; margin: 8px 0; }
+.bar-bg {
+  width: 80%; height: 16px; background: #333; border-radius: 8px;
+  margin: 0 auto; overflow: hidden;
+}
+.bar-fill {
+  height: 100%; border-radius: 8px; background: #EF5350;
+  transition: width 0.2s, background 0.2s; width: 0%;
+}
+.cancel-btn {
+  margin-top: 20px; background: none; border: none;
+  font-size: 16px; color: #aaa; cursor: pointer; padding: 12px;
+}
+
+/* --- DONE --- */
+#done-screen {
+  display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: #FFF8E1; z-index: 100;
+  flex-direction: column; align-items: center; justify-content: center;
+}
+#done-screen.active { display: flex; }
+.done-emoji { font-size: 80px; }
+.done-title { font-size: 32px; font-weight: 800; color: #F57F17; margin-top: 16px; }
+.done-streak { font-size: 20px; color: #E65100; margin-top: 8px; font-weight: 600; }
+
+/* Loading */
+#loading {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: #FFF8E1; z-index: 200;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+#loading.hidden { display: none; }
+.loading-text { font-size: 18px; color: #795548; margin-top: 16px; }
+.loading-spinner {
+  width: 48px; height: 48px; border: 4px solid #FFE082;
+  border-top-color: #F57F17; border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<!-- Loading -->
+<div id="loading">
+  <div class="loading-spinner"></div>
+  <p class="loading-text">Loading face detection...</p>
+</div>
+
+<!-- Home -->
+<div id="home">
+  <h1 class="title">SmileLog</h1>
+  <p class="subtitle">Every day, one smile.</p>
+  <div class="streak-box">
+    <div class="streak-num" id="streak-num">0</div>
+    <div class="streak-label">day streak</div>
+  </div>
+  <div class="cal-wrap" id="calendar"></div>
+  <button class="btn" id="smile-btn" onclick="openCamera()">Smile now</button>
+</div>
+
+<!-- Camera -->
+<div id="camera-screen">
+  <div id="video-wrap">
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas-overlay"></canvas>
+  </div>
+  <div class="cam-overlay">
+    <div class="cam-title">Smile!</div>
+    <div class="smile-pct" id="smile-pct">0%</div>
+    <div class="bar-bg"><div class="bar-fill" id="bar-fill"></div></div>
+    <button class="cancel-btn" onclick="closeCamera()">Cancel</button>
+  </div>
+</div>
+
+<!-- Done -->
+<div id="done-screen">
+  <div class="done-emoji" id="done-emoji"></div>
+  <div class="done-title">Great smile!</div>
+  <div class="done-streak" id="done-streak"></div>
+  <button class="btn" onclick="closeDone()" style="margin-top:32px">Back to home</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin></script>
+
+<script>
+const STORAGE_KEY = 'smile_log_data';
+let logData = {};
+let stream = null;
+let faceMesh = null;
+let mpCamera = null;
+let peakSmile = 0;
+let detecting = false;
+
+// --- Storage ---
+function loadData() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (raw) logData = JSON.parse(raw);
+}
+function saveData() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(logData));
+}
+function todayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+// --- Streak ---
+function calcStreak() {
+  let count = 0;
+  const d = new Date();
+  while (true) {
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    if (logData[key]) { count++; d.setDate(d.getDate()-1); }
+    else break;
+  }
+  return count;
+}
+
+// --- Calendar ---
+function renderCalendar() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const firstDay = new Date(year, month, 1).getDay();
+  const monthName = now.toLocaleString('default', { month:'long', year:'numeric' });
+
+  let html = `<div class="cal-month">${monthName}</div><div class="cal-grid">`;
+  ['S','M','T','W','T','F','S'].forEach(d => {
+    html += `<div class="cal-cell cal-header">${d}</div>`;
+  });
+  for (let i = 0; i < firstDay; i++) html += `<div class="cal-cell"></div>`;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const done = logData[key];
+    const isToday = d === now.getDate();
+    let cls = 'cal-cell';
+    if (done) cls += ' cal-done';
+    if (isToday) cls += ' cal-today';
+    html += `<div class="${cls}">${d}</div>`;
+  }
+  html += '</div>';
+  document.getElementById('calendar').innerHTML = html;
+}
+
+function updateHome() {
+  const s = calcStreak();
+  document.getElementById('streak-num').textContent = s;
+  renderCalendar();
+  const btn = document.getElementById('smile-btn');
+  if (logData[todayKey()]) {
+    btn.textContent = 'Done for today!';
+    btn.classList.add('btn-done');
+  } else {
+    btn.textContent = 'Smile now';
+    btn.classList.remove('btn-done');
+  }
+}
+
+// --- Smile Detection using MediaPipe FaceMesh ---
+function calcSmileFromLandmarks(landmarks) {
+  // Mouth corners: 61 (left), 291 (right)
+  // Upper lip top: 13, Lower lip bottom: 14
+  // Nose tip: 1
+  const leftCorner = landmarks[61];
+  const rightCorner = landmarks[291];
+  const upperLip = landmarks[13];
+  const lowerLip = landmarks[14];
+  const noseTip = landmarks[1];
+
+  // Mouth width
+  const mouthWidth = Math.sqrt(
+    Math.pow(rightCorner.x - leftCorner.x, 2) +
+    Math.pow(rightCorner.y - leftCorner.y, 2)
+  );
+
+  // Mouth height (opening)
+  const mouthHeight = Math.sqrt(
+    Math.pow(upperLip.x - lowerLip.x, 2) +
+    Math.pow(upperLip.y - lowerLip.y, 2)
+  );
+
+  // Corner elevation relative to center
+  const mouthCenterY = (upperLip.y + lowerLip.y) / 2;
+  const leftCornerLift = mouthCenterY - leftCorner.y;
+  const rightCornerLift = mouthCenterY - rightCorner.y;
+  const avgLift = (leftCornerLift + rightCornerLift) / 2;
+
+  // Smile score: combination of width ratio and corner lift
+  const widthRatio = mouthWidth / (Math.abs(noseTip.y - landmarks[10].y) + 0.001);
+  const liftScore = avgLift * 100;
+
+  // Normalize to 0-100
+  let smile = 0;
+  // Width-based (wider = more smile)
+  smile += Math.max(0, (widthRatio - 0.25) * 200);
+  // Lift-based (corners up = smile)
+  smile += Math.max(0, liftScore * 300);
+
+  return Math.min(100, Math.max(0, Math.round(smile)));
+}
+
+async function initFaceMesh() {
+  faceMesh = new FaceMesh({
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+  });
+
+  faceMesh.setOptions({
+    maxNumFaces: 1,
+    refineLandmarks: true,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5,
+  });
+
+  faceMesh.onResults(onResults);
+  await faceMesh.initialize();
+  document.getElementById('loading').classList.add('hidden');
+  loadData();
+  updateHome();
+}
+
+function onResults(results) {
+  if (!detecting) return;
+  if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+    const landmarks = results.multiFaceLandmarks[0];
+    const smileScore = calcSmileFromLandmarks(landmarks);
+
+    if (smileScore > peakSmile) {
+      peakSmile = smileScore;
+      updateSmileUI(peakSmile);
+    }
+
+    if (peakSmile >= 90) {
+      peakSmile = 100;
+      updateSmileUI(100);
+      detecting = false;
+      // Vibrate if supported
+      if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+      logData[todayKey()] = true;
+      saveData();
+      setTimeout(() => {
+        closeCamera();
+        showDone();
+      }, 500);
+    }
+  }
+}
+
+function updateSmileUI(pct) {
+  document.getElementById('smile-pct').textContent = pct + '%';
+  const bar = document.getElementById('bar-fill');
+  bar.style.width = pct + '%';
+  if (pct < 40) bar.style.background = '#EF5350';
+  else if (pct < 70) bar.style.background = '#FFA726';
+  else bar.style.background = '#66BB6A';
+}
+
+// --- Camera ---
+async function openCamera() {
+  if (logData[todayKey()]) return;
+  peakSmile = 0;
+  updateSmileUI(0);
+  detecting = true;
+
+  const video = document.getElementById('video');
+  document.getElementById('camera-screen').classList.add('active');
+
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
+    });
+    video.srcObject = stream;
+    await video.play();
+
+    mpCamera = new Camera(video, {
+      onFrame: async () => {
+        if (detecting && faceMesh) {
+          await faceMesh.send({ image: video });
+        }
+      },
+      width: 640,
+      height: 480,
+    });
+    mpCamera.start();
+  } catch (e) {
+    alert('Camera access denied');
+    closeCamera();
+  }
+}
+
+function closeCamera() {
+  detecting = false;
+  document.getElementById('camera-screen').classList.remove('active');
+  if (mpCamera) { mpCamera.stop(); mpCamera = null; }
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+}
+
+function showDone() {
+  const s = calcStreak();
+  document.getElementById('done-emoji').textContent = s >= 7 ? '🔥' : s >= 3 ? '⭐' : '😊';
+  document.getElementById('done-streak').textContent = s + ' day streak';
+  document.getElementById('done-screen').classList.add('active');
+}
+
+function closeDone() {
+  document.getElementById('done-screen').classList.remove('active');
+  updateHome();
+}
+
+// --- Init ---
+initFaceMesh();
+</script>
+</body>
+</html>
